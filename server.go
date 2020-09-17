@@ -47,7 +47,7 @@ func NewServer(id string, client *clientv3.Client) (*Server, error) {
 		},
 
 		session:  session,
-		election: concurrency.NewElection(session, "/simple-ds/election"),
+		election: concurrency.NewElection(session, "/simple-ds/elections"),
 
 		ctx:    ctx,
 		cancel: cancel,
