@@ -1,1 +1,3 @@
-simple-ds
+# Simple distributed system
+
+![demo](./resources/demo.png)
