@@ -58,16 +58,16 @@ func (s *Server) isLeader() bool {
 	return s.currentLeader == s.ID
 }
 
-func (s *Server) runForLeadership(ctx context.Context) error {
+func (s *Server) runForLeadership() error {
 	log.Printf("%s running for leadership", s.ID)
 	go func() {
-		for evt := range s.election.Observe(ctx) {
+		for evt := range s.election.Observe(s.ctx) {
 			s.Lock()
 			s.currentLeader = string(evt.Kvs[0].Value)
 			s.Unlock()
 		}
 	}()
-	return s.election.Campaign(ctx, s.ID)
+	return s.election.Campaign(s.ctx, s.ID)
 }
 
 func (s *Server) registerServer() error {

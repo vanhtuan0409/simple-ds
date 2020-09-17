@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -27,9 +26,7 @@ func main() {
 		panic(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go s.runForLeadership(ctx)
+	go s.runForLeadership()
 	go s.observeMemberChanges()
 
 	termCh := make(chan os.Signal, 1)
