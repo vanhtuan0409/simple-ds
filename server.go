@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -10,14 +12,19 @@ import (
 	"go.etcd.io/etcd/clientv3/concurrency"
 )
 
+type ServerMeta struct {
+	ID string
+}
+
 type Server struct {
-	id string
+	ServerMeta
 
 	session       *concurrency.Session
 	election      *concurrency.Election
 	currentLeader string
 
-	stopCh chan bool
+	ctx    context.Context
+	cancel context.CancelFunc
 	sync.Mutex
 }
 
@@ -26,20 +33,27 @@ func NewServer(id string, client *clientv3.Client) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
-		id:       id,
+		ServerMeta: ServerMeta{
+			ID: id,
+		},
+
 		session:  session,
-		election: concurrency.NewElection(session, "/simple-ds"),
-		stopCh:   make(chan bool, 1),
+		election: concurrency.NewElection(session, "/simple-ds/election"),
+
+		ctx:    ctx,
+		cancel: cancel,
 	}, nil
 }
 
 func (s *Server) isLeader() bool {
-	return s.currentLeader == s.id
+	return s.currentLeader == s.ID
 }
 
 func (s *Server) runForLeadership(ctx context.Context) error {
-	log.Printf("%s running for leadership", s.id)
+	log.Printf("%s running for leadership", s.ID)
 	go func() {
 		for evt := range s.election.Observe(ctx) {
 			s.Lock()
@@ -47,14 +61,40 @@ func (s *Server) runForLeadership(ctx context.Context) error {
 			s.Unlock()
 		}
 	}()
-	return s.election.Campaign(ctx, s.id)
+	return s.election.Campaign(ctx, s.ID)
 }
 
-func (s *Server) start() {
+func (s *Server) registerServer() error {
+	memberKey := fmt.Sprintf("/simple-ds/members/%s", s.ID)
+	memberInfo, err := json.Marshal(s.ServerMeta)
+	if err != nil {
+		return err
+	}
+	if _, err = s.session.Client().Put(s.ctx, memberKey, string(memberInfo), clientv3.WithLease(s.session.Lease())); err != nil {
+		return err
+	}
+	keepaliveCh, err := s.session.Client().KeepAlive(s.ctx, s.session.Lease())
+	if err != nil {
+		return err
+	}
+	go func() {
+		for range keepaliveCh {
+			// loop for reading out response channel
+		}
+	}()
+	return nil
+}
+
+func (s *Server) start() error {
+	defer s.cleanup()
+	if err := s.registerServer(); err != nil {
+		return err
+	}
+
 	for {
 		select {
-		case <-s.stopCh:
-			return
+		case <-s.ctx.Done():
+			return nil
 		default:
 			if s.isLeader() {
 				log.Println("Hooray, we are leader now!!!!")
@@ -66,8 +106,12 @@ func (s *Server) start() {
 
 func (s *Server) stop() {
 	log.Println("Received terminate signal. Resign leadership if possible")
+	s.cancel()
+}
+
+func (s *Server) cleanup() {
 	if s.isLeader() {
 		s.election.Resign(context.TODO())
 	}
-	s.stopCh <- true
+	s.session.Close()
 }
