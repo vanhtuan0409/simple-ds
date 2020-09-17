@@ -5,11 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"sync"
 	"time"
 
 	"go.etcd.io/etcd/clientv3"
 	"go.etcd.io/etcd/clientv3/concurrency"
+	"go.etcd.io/etcd/mvcc/mvccpb"
+)
+
+var (
+	memberKeyPattern = regexp.MustCompile("/simple-ds/members/(.*)")
 )
 
 type ServerMeta struct {
@@ -29,7 +35,7 @@ type Server struct {
 }
 
 func NewServer(id string, client *clientv3.Client) (*Server, error) {
-	session, err := concurrency.NewSession(client, concurrency.WithTTL(5))
+	session, err := concurrency.NewSession(client, concurrency.WithTTL(30))
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +89,30 @@ func (s *Server) registerServer() error {
 		}
 	}()
 	return nil
+}
+
+func (s *Server) observeMemberChanges() {
+	ch := s.session.Client().Watch(s.ctx, "/simple-ds/members", clientv3.WithPrefix())
+	for wresp := range ch {
+		for _, ev := range wresp.Events {
+			matches := memberKeyPattern.FindSubmatch(ev.Kv.Key)
+			if len(matches) != 2 {
+				log.Printf("Unable to extract member id on member change event. Key: %q", ev.Kv.Key)
+				continue
+			}
+			memberID := string(matches[1])
+			switch ev.Type {
+			case mvccpb.PUT:
+				if memberID != s.ID {
+					log.Printf("New member joined cluster. Member ID: %s", memberID)
+				}
+			case mvccpb.DELETE:
+				if memberID != s.ID {
+					log.Printf("Member leaved cluster. Member ID: %s", memberID)
+				}
+			}
+		}
+	}
 }
 
 func (s *Server) start() error {
