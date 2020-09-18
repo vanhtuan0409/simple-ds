@@ -79,15 +79,6 @@ func (s *Server) registerServer() error {
 	if _, err = s.session.Client().Put(s.ctx, memberKey, string(memberInfo), clientv3.WithLease(s.session.Lease())); err != nil {
 		return err
 	}
-	keepaliveCh, err := s.session.Client().KeepAlive(s.ctx, s.session.Lease())
-	if err != nil {
-		return err
-	}
-	go func() {
-		for range keepaliveCh {
-			// loop for reading out response channel
-		}
-	}()
 	return nil
 }
 
@@ -120,6 +111,9 @@ func (s *Server) start() error {
 	if err := s.registerServer(); err != nil {
 		return err
 	}
+
+	go s.runForLeadership()
+	go s.observeMemberChanges()
 
 	for {
 		select {

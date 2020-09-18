@@ -26,9 +26,6 @@ func main() {
 		panic(err)
 	}
 
-	go s.runForLeadership()
-	go s.observeMemberChanges()
-
 	termCh := make(chan os.Signal, 1)
 	signal.Notify(termCh, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
