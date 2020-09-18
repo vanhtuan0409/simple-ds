@@ -6,4 +6,5 @@
 
 - [x] Leader election
 - [x] Group membership
+- [ ] Write-ahead log (WAL)
 - [ ] Replication
