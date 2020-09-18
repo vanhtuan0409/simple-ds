@@ -5,4 +5,5 @@
 ### Features
 
 - [x] Leader election
+- [x] Group membership
 - [ ] Replication
